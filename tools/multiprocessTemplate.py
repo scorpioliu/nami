@@ -3,6 +3,8 @@
 # multiprocessTemplate.py
 # Using multiprocess template
 
+# Comes from http://jeetworks.org/node/81
+
 # by scorpioliu
 # 2012.02.11
 
