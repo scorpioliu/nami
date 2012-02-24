@@ -156,4 +156,4 @@ if '__main__' == __name__:
     else:
         coding = 'utf8'
  
-    rshowScoreReport(getSegmentScore(sys.argv[1], sys.argv[2], sys.argv[3], coding))
+    showScoreReport(getSegmentScore(sys.argv[1], sys.argv[2], sys.argv[3], coding))

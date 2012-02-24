@@ -42,7 +42,6 @@ def giveCRFRes(inFile, outFile, coding):
             res = res + i[0] + ' '
         else:
             res += i[0]
-        print (res)
     if len(res) > 0 and res[-1] == ' ':
         res = res[0:-1]
     fo.write(res + '\n')
