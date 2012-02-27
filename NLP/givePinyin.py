@@ -1,79 +1,53 @@
-# givePinyin.py
-# Give pinyin automatically using simple viterbi
+#!/usr/bin/env python
 
-# by scorpioliu
-# 2012.01.31
+'''
+givePinyin.py : simple pinyin tool based on viterbie
 
-def viterbi_simple(str, strPriority, logP):
-    resSet = []
-    resSet.append(['',0])
-    INF = len(str) * logP[0]
-    for i in range(0,len(str)):
-        if 0 == i:
-            if (str[i]) not in strPriority:
-                return str, 0
-            resSet.append([str[i], logP[strPriority[str[i]]]])
-        else:
-            minStr = ''
-            minP = INF
-            for k in range(0, i + 1):
-                j = i - k
-                c = str[j:i+1]
-                if c not in strPriority:
-                    continue
-                else:
-                    cP = logP[strPriority[c]]
-                    preStr, preP = resSet[j]
-                    if minP >= cP + preP:
-                        minP = cP + preP
-                        if '' == preStr:
-                            minStr = c
-                        else:
-                            minStr = preStr + ' ' + c
-                    #print (cP, preP, minP, preStr, c, minStr)
-            resSet.append([minStr, minP])                 
-    return resSet[len(str)]
+@author: scorpioLiu, shanzhongdeyunqi@gmail.com, 2012.01.31
+@version: 0.1
+@license: MIT
+@copyright: (c) 2012, Project Nami
+'''
 
-def giveTable(wordFile, logFile):
-    fi = open(wordFile, encoding = 'gb18030')
-    strPriority = {}
-    logP = []
-    pinyinTable = {}
-    for line in fi:
-        line = line.split()
-        freq = int(line[-1])
-        word = line[-2]
+from simpleSeg import simpleSeg
+
+class pinyiMarker(simpleSeg):
+    def __init__(self, wordFile, wordCoding, logFile, logCoding, lim):
+        self.pMap, self.pinyinMap = self.getMap(wordFile, wordCoding)
+        self.pLog = self.getLog(logFile, logCoding)
+        self.lim = lim
+        
+    def getMap(self, wordFile, wordCoding):  
+        pMap = {}
+        pinyinMap = {}
+        try:
+            fi = open(wordFile, encoding = wordCoding)
+        except Exception as e:
+            print ('Err exists in opening', wordFile, ':', e)
+            return pMap, pinyinMap
+        for line in fi:
+            line = line.split()
+            pinyin = ''
+            for i in range(0, len(line) - 2):
+                pinyin = pinyin + '\'' + line[i]
+            if line[-2] not in pMap:
+                pMap[line[-2]] = int(line[-1])
+                pinyinMap[line[-2]] = pinyin
+            else:
+                if pMap[line[-2]] < int(line[-1]):
+                    pMap[line[-2]] = int(line[-1])
+                    pinyinMap[line[-2]] = pinyin
+        fi.close()
+        return pMap, pinyinMap
+
+    def givePinyin(self, s):
         pinyin = ''
-        for i in range(0, len(line) - 2):
-            pinyin = pinyin + '\'' + line[i]
-        if word not in strPriority:
-            strPriority[word] = freq
-            pinyinTable[word] = pinyin
-        else:
-            if strPriority[word] < freq:
-                strPriority[word] = freq
-                pinyinTable[word] = pinyin
-    fi.close()
-    fi = open(logFile, encoding = 'utf8')
-    for line in fi:
-        line = line.split(',')
-        logP.append(int(line[0]))
-    fi.close()
-    return strPriority, logP, pinyinTable
-
-def givePinyin(str, pinyinTable):
-    str = str.split()
-    if 0 == len(str):
-        return ''
-    pinyin = ''
-    for phrase in str:
-        pinyin += pinyinTable[phrase]
-    return pinyin
-
-pri, logP, pinyinTable = giveTable('../../dataset/chinese.txt', '../../dataset/codebook.c')
-fi = open('../../dataset/testset.txt', encoding = 'gb18030')
-for line in fi:    
-    str = line.split()[0]
-    res = viterbi_simple(str, pri, logP)
-    pinyin = givePinyin(res[0], pinyinTable)
-    print (pinyin, res[0])
+        s = s.split()
+        if 0 == len(s):
+            return pinyin
+        s = self.getSingleRes(s[0])
+        s = s.split()   
+        for i in s:
+            pinyin += self.pinyinMap[i]
+        return pinyin
+    
