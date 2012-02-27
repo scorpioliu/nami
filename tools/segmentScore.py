@@ -28,7 +28,7 @@ def checkChar(word):
             return True            
     return False
 
-def getDictSet(fileName, coding):
+def getDictSet(fileName, coding, flag):
     dictSet = {}
     try:
         fi = open(fileName, encoding = coding)
@@ -38,6 +38,10 @@ def getDictSet(fileName, coding):
     for line in fi:
         line = line.split()
         for i in line:
+            if flag:
+                idx = i.rfind('/')
+                if idx >= 0:
+                    i = i[0:idx]                    
             if checkChar(i):
                 dictSet[i] = 0
     fi.close()
@@ -90,6 +94,16 @@ def getSegmentScore(resFileName, testFileName, trainFileName, coding):
         for i in testLine:
             totalUnit += len(testLine)
         
+        # if trainFileName is not exist, 
+        # the result may come from ICTCLAS and other segmentor
+        # so kill tag such as '/nr'
+        if '' == trainFileName:
+            for i in range(len(resLine)):
+                idx = resLine[i].rfind('/')
+                if idx < 0:
+                    continue
+                resLine[i] = resLine[i][0:idx]
+        
         testCount += len(testLine)
         resCount += len(resLine)
         cmpRes = list(diff.compare(testLine, resLine))
@@ -104,27 +118,32 @@ def getSegmentScore(resFileName, testFileName, trainFileName, coding):
     fiTest.close()
     fiRes.close()
     
-    trainSet = getDictSet(trainFileName, coding)
-    testSet = getDictSet(testFileName, coding)
-    resSet = getDictSet(resFileName, coding)
-    OOVSet = {}
-    for i in testSet:
-        if i not in trainSet:
-            OOVSet[i] = 0
-
-    originOOV = getOOV(trainSet, testSet)
-    OOV = getOOV(trainSet, resSet)
-    ROOV = getIV(OOVSet, resSet)
+    if '' != trainFileName:
+        trainSet = getDictSet(trainFileName, coding, False)
+        resSet = getDictSet(resFileName, coding, False)
+    else:
+        resSet = getDictSet(resFileName, coding, True)
+    testSet = getDictSet(testFileName, coding, False)
+    
+    if '' != trainFileName:
+        OOVSet = {}
+        for i in testSet:
+            if i not in trainSet:
+                OOVSet[i] = 0
+        originOOV = getOOV(trainSet, testSet)
+        OOV = getOOV(trainSet, resSet)
+        ROOV = getIV(OOVSet, resSet)
     RIV = getIV(testSet, resSet)
         
     report = []
     report.append(['Recall(R)', resRightCount/testCount])
     report.append(['Precision(P)', resRightCount/resCount])
     report.append(['F1-Score(F)', getFMeasure(resRightCount/testCount, resRightCount/resCount)])
-    report.append(['Original OOV(OOV)', originOOV])
     report.append(['Test Words Recall(Riv)', RIV])
-    report.append(['Test OOV Recall(Roov)', ROOV])
-    report.append(['Segment Result OOV', OOV])
+    if '' != trainFileName:
+        report.append(['Original OOV(OOV)', originOOV])
+        report.append(['Test OOV Recall(Roov)', ROOV])
+        report.append(['Segment Result OOV', OOV])
     report.append(['Test Sentence', totalSen])
     report.append(['Total Right Sentence', totalRight])
     report.append(['Total Sentence Precision', totalRight/totalSen])
@@ -148,12 +167,16 @@ def showScoreReport(report):
             print (i[0].ljust(maxLen), ':', '%.4f'%i[1])
 
 if '__main__' == __name__:
-    if len(sys.argv) < 4 or '--help' == sys.argv[1]:
+    if len(sys.argv) < 3 or '--help' == sys.argv[1]:
         print ('Usage : segmenScore.py {result file} {test result file} {train file} {[opt] coding}')
         sys.exit(1)
     if len(sys.argv) == 5:
         coding = sys.argv[4]
     else:
         coding = 'utf8'
+    if len(sys.argv) == 4:
+        trainFile = sys.argv[3]
+    else:
+        trainFile = ''
  
-    showScoreReport(getSegmentScore(sys.argv[1], sys.argv[2], sys.argv[3], coding))
+    showScoreReport(getSegmentScore(sys.argv[1], sys.argv[2], trainFile, coding))

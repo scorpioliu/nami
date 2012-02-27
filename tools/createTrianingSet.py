@@ -70,6 +70,8 @@ class trainingSetCreator(object):
                 break
             cnt += 1 
             line = line.split()
+            if 0 == len(line):
+                continue
             for i in line:
                 if len(i) == 1:
                     fo.write('%s\tS\n'%i)

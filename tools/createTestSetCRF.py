@@ -29,6 +29,9 @@ if __name__ == "__main__":
                 print ('Hello')
                 continue
             for i in line:
+                # Space will take a line, so ignore it
+                if ' ' == i:
+                    continue
                 if '' == sign:
                     fo.write(i + '\n')
                 else:
