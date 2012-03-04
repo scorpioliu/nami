@@ -201,7 +201,7 @@ def createWordQueue(fileName, coding):
         
 if '__main__' == __name__:
     platformType = platform.platform()
-    if platformType.find('Windows') < 0 and  platformType.find('Linux'):
+    if platformType.find('Windows') < 0 and  platformType.find('Linux') < 0:
         print (platformType, 'is not support.')
         sys.exit(0)
     if len(sys.argv) < 3 or '--help' == sys.argv[1]:
