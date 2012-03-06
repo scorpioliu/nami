@@ -7,11 +7,16 @@ Multiprocessor is used.
 
 NOTE : Processing monitor only support Windows or Linux.
 
-Processing monitor will wait 10 circles, 
+Processing monitor will wait 5 circles, 
 after that it will kill process and create another one
-State queue style is [pid, start time, end time, work content]
-Start time is '' means work finish.
-End time is '' means work begin.
+State queue style is [pid, process time, work content, return stat]
+2 means return good
+1 means start to search
+0 means print Err
+-1 means can not find content in page
+-2 means error exists in page
+-3 means monitor finish
+
 
 @author: scorpioLiu, shanzhongdeyunqi@gmail.com, 2012.02.28
 @version: 0.1
@@ -33,73 +38,138 @@ import queue
 
 class procMonitor(multiprocessing.Process):
     def __init__(self, workQueue, resultQueue, statQueue, processNum):
-        multiprocessing.Process.__init__(self)
-        
+        multiprocessing.Process.__init__(self)        
         self.workQueue = workQueue
         self.resultQueue = resultQueue  
         self.statQueue = statQueue
         self.processorNum = processorNum
-        self.kill_received = False
-        self.statTable = {}
+        self.killReceived = False
         self.killCnt = processorNum
         self.waitTime = 10.0
+        self.waitCircle = 3
         self.workCnt = workQueue.qsize()
         self.finishCnt = 0
+        self.statTable = {}
+        self.platform = self.__getPlatform()
         
+    def __getPlatform(self):
         platformType = platform.platform()
         if platformType.find('Windows') >= 0:
-            self.platform = 'Windows'
+            return 'Windows'
         elif platformType.find('Linux') >= 0:
-            self.platform = 'Linux'
+            return 'Linux'
         else:
-            self.platform = 'Others'
+            return 'Others'
     
+    def __killSingleProc(self, pid):
+        if 'Windows' == self.platform:
+            os.system('taskkill /pid ' + str(pid) + ' /F')                   
+        elif 'Linux' == self.platform:
+            os.system('kill ' + str(pid))
+        else:
+            return False
+        return True
+    
+    def __killAllProc(self):
+        time.sleep(self.waitTime)
+        # Collect all the live process
+        while not self.statQueue.empty():
+            procStat = self.statQueue.get()    
+            if 1 == procStat[-1]:
+                self.statTable[procStat[0]] = [0, procStat[2]]
+        for i in self.statTable:
+            self.__killSingleProc(i)
+        self.statTable = []
+        self.resultQueue.put(['NULL', -3])
         
     def run(self):
-        while not self.kill_received:
+        waitRound = 0
+        fullKillRound = 0
+        badCnt = 0
+        while not self.killReceived:
             if self.finishCnt == self.workCnt:
                 break
             
             while not self.statQueue.empty():
                 procStat = self.statQueue.get()    
-                if '' == procStat[2]:
-                    self.statTable[procStat[0]] = [0, procStat[-1]]
-                if '' == procStat[1]:
+                if 1 == procStat[-1]:
+                    self.statTable[procStat[0]] = [0, procStat[2]]
+                if 1 != procStat[-1]:
                     self.finishCnt += 1
-                if '' == procStat[1] and procStat[0] in self.statTable:
+                if 1 != procStat[-1] and procStat[0] in self.statTable:
                     self.statTable.pop(procStat[0])
-
+                if -1 != procStat[-1] and 1 != procStat[-1]:
+                    badCnt = 0
+                elif -1 == procStat[-1]:
+                    badCnt += 1
+            if self.waitCircle * self.processorNum < badCnt:
+                self.__killAllProc()
+                break
+            
             delVec = []
+            killCnt = 0
             for i in self.statTable:
                 self.statTable[i][0] += 1
-                if self.statTable[i][0] > 10: # Means 10 circle wait
+                if self.statTable[i][0] > self.waitCircle: 
                     if 'Windows' == self.platform:
-                        killRes = os.system('taskkill /pid ' + str(i) + ' /F')                        
+                        killRes = os.system('taskkill /pid ' + str(i) + ' /F')                   
                     elif 'Linux' == self.platform:
-                        killRes = os.system('kill ' + str(i))  
+                        killRes = os.system('kill ' + str(i))
                     else:
                         continue
-                    if 0 != killRes:
-                        continue
-                    delVec.append([i, self.statTable[i][1]])
+					# No matter kill success or not, pid must delete
+                    if 0 == killRes :
+                        killCnt += 1
+                        delVec.append([i, self.statTable[i][1], True])
+                    else:
+                        delVec.append([i, self.statTable[i][1], False])
+            
+            if killCnt >= self.processorNum:
+                fullKillRound += 1
+                if fullKillRound > self.waitCircle:
+                    self.__killAllProc()
+                    print ('All proc are blocked, so spider closed.')
+                    break
+            else:
+                fullKillRound = max(0, fullKillRound - 1)
                     
             # remove dead pid
             for i in delVec:
-               self.killCnt += 1
                self.statTable.pop(i[0])
                self.workQueue.put(i[1]) 
                print (i[1], ' push back.')
-               checker = baiduChecker(self.workQueue, self.resultQueue, self.statQueue, self.killCnt)
-               checker.start()               
+               if i[2]:
+                   checker = baiduChecker(self.workQueue, self.resultQueue, self.statQueue, self.killCnt)
+                   checker.start()
+                   self.killCnt += 1
+            
+            # if num of process below processor num for long time, create new process
+            # Monitor may create more process than processor number
+            # but after process killed, it will become normal number.
+            if self.processorNum > len(self.statTable):
+                waitRound += 1
+                if waitRound > self.waitCircle:
+                    waitRound = 0
+                    for i in range(self.processorNum - len(self.statTable)):
+                        checker = baiduChecker(self.workQueue, self.resultQueue, self.statQueue, self.killCnt)
+                        checker.start()
+                        self.killCnt += 1
+            else:
+                waitRound = 0
+			
+            print ('Monitor is working', self.statTable)
             time.sleep(self.waitTime/self.processorNum)
+            if self.workQueue.empty():
+                self.resultQueue.put(['NULL', -3])
+                break            
         print ('Monitor proccess finished.')
 
 class baiduChecker(multiprocessing.Process):
-    def __init__(self, wordQueue, resultQueue, statQueue, processNum):
+    def __init__(self, workQueue, resultQueue, statQueue, processNum):
         
         multiprocessing.Process.__init__(self)
                 
-        self.wordQueue = wordQueue
+        self.workQueue = workQueue
         self.resultQueue = resultQueue    
         self.statQueue = statQueue       
         self.kill_received = False
@@ -145,20 +215,19 @@ class baiduChecker(multiprocessing.Process):
     def run(self):
         while not self.kill_received:
             try:
-                word = self.wordQueue.get_nowait()                
+                word = self.workQueue.get_nowait()                
             except queue.Empty:
                 break
-            
             startTime = time.strftime('%Y%m%d%H%M%S', time.gmtime())
-            self.statQueue.put([self.pid, startTime, '', word])
+            self.statQueue.put([self.pid, startTime, word, 1]) # 1 means start
             try:
                 freq, flag = self.__getFreq__(word)
             except Exception as e:
                 print ('Err exists in get freq :', e)
                 print (word, 'search failed', self.processNum)
-                self.resultQueue.put([word, -1])
+                self.resultQueue.put([word, -2]) # -2 means bad code style in page
                 endTime = time.strftime('%Y%m%d%H%M%S', time.gmtime())
-                self.statQueue.put([self.pid, '', endTime, word])
+                self.statQueue.put([self.pid, endTime, workQueue, -2])
                 continue
             try:
                 if flag:
@@ -170,18 +239,22 @@ class baiduChecker(multiprocessing.Process):
             except Exception as e:
                 print ('Err exists in print or put :', e)
                 endTime = time.strftime('%Y%m%d%H%M%S', time.gmtime())
-                self.statQueue.put([self.pid, '', endTime, word])
+                self.statQueue.put([self.pid, endTime, word, 0]) # 0 means just print failed
                 continue
             endTime = time.strftime('%Y%m%d%H%M%S', time.gmtime())
-            self.statQueue.put([self.pid, '', endTime, word])
+            if flag: 
+                self.statQueue.put([self.pid, endTime, word, 2]) # 2 means just return right
+            else:
+                self.statQueue.put([self.pid, endTime, word, -1]) # -1 means search failed
+        print (self.pid, 'closed.')
                 
-def createWordQueue(fileName, coding):
+def createWorkQueue(fileName, coding):
     try:
         fi = open(fileName, 'r', encoding = coding)
     except Exception as e:
         print ('Open', fileName, 'failed :', e)
     
-    wordQueue = multiprocessing.Queue()
+    workQueue = multiprocessing.Queue()
     wordSet = {}
     for line in fi:
         line = line.split()
@@ -191,19 +264,20 @@ def createWordQueue(fileName, coding):
             print (line[0], 'is too long > 38, ignored')
             continue
         if line[0] not in wordSet:
-            wordQueue.put(line[0])
+            workQueue.put(line[0])
             wordSet[line[0]] = 0
         else:
             print (line[0], 'already exists.')
     fi.close()
     
-    return wordQueue, len(wordSet)
+    return workQueue, len(wordSet)
         
 if '__main__' == __name__:
     platformType = platform.platform()
-    if platformType.find('Windows') < 0 and  platformType.find('Linux') < 0:
+    if platformType.find('Windows') < 0 and platformType.find('Linux') < 0:
         print (platformType, 'is not support.')
         sys.exit(0)
+    
     if len(sys.argv) < 3 or '--help' == sys.argv[1]:
         print ('Usage :', sys.argv[0], '{word list file}, {result file}, {word encode}, {processor num}')
         sys.exit(1)
@@ -220,24 +294,26 @@ if '__main__' == __name__:
     else:
         processorNum = 2
     
-    wordQueue, wordNum = createWordQueue(inFile, coding)
+    workQueue, wordNum = createWorkQueue(inFile, coding)
     resultQueue = multiprocessing.Queue()
     statQueue = multiprocessing.Queue()
     resultVec = []
     wordHitSet = {}
     
-    monitor = procMonitor(wordQueue, resultQueue, statQueue, processorNum)
+    monitor = procMonitor(workQueue, resultQueue, statQueue, processorNum)
     monitor.start()
      
     for i in range(processorNum):
-        checker = baiduChecker(wordQueue, resultQueue, statQueue, i)
+        checker = baiduChecker(workQueue, resultQueue, statQueue, i)
         checker.start()
     while len(wordHitSet) < wordNum:
         res = resultQueue.get()
+        if -3 == res[-1]: 
+            break
         wordHitSet[res[0]] = 0
-        if -1 != res[-1]:
+        if res[-1] >= 0:
             resultVec.append(res)
-     
+    
     resultVec.sort(key=lambda resultVec:resultVec[1], reverse=True)   
     fo = open(outFile, 'w', encoding = coding)
     for i in resultVec:
