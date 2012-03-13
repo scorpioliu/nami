@@ -1,4 +1,4 @@
-#!/usr/bin/env/python3
+#!/usr/bin/env python3
 
 '''
 freqChecker.py : give frequency of words from Baidu search engine.
