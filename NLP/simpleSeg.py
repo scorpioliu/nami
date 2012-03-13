@@ -1,7 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 '''
 simpleSeg.py : simple segmentation based on forward Viterbie algorithm
+two file must exists : word and its freq (e.g. 0-255)
+minus log value of freq level file (e.g. 255 3543)
 
 @author: scorpioLiu, shanzhongdeyunqi@gmail.com, 2012.02.26
 @version: 0.1
